@@ -1,0 +1,23 @@
+{
+    "manifest_version": 3,
+    "name": "Google Sheets Contact Editor",
+    "version": "1.0",
+    "description": "Search and update contacts in your Google Sheets.",
+    "permissions": [
+        "identity",
+        "storage"
+    ],
+    "host_permissions": [
+        "https://sheets.googleapis.com/*"
+    ],
+    "oauth2": {
+        "client_id": "942515055183-43lbq5tdpehnj3ijo0lt7kg2n4c5ic06.apps.googleusercontent.com",
+        "scopes": [
+            "https://www.googleapis.com/auth/spreadsheets"
+        ]
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "Contact Editor"
+    }
+}

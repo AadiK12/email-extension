@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Contact Editor</title>
+  <link rel="stylesheet" type="text/css" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <h2>Contact Editor</h2>
+    
+    <div class="control-group">
+      <label for="sheetSelect">Select Sheet:</label>
+      <select id="sheetSelect">
+        <option value="" disabled selected>Loading sheets...</option>
+      </select>
+    </div>
+
+    <div class="control-group">
+      <label for="emailInput">Email Address:</label>
+      <input type="email" id="emailInput" placeholder="Enter email to search">
+    </div>
+
+    <button id="searchBtn">Search</button>
+
+    <div id="statusMessage" class="status"></div>
+
+    <div id="resultSection" class="hidden">
+      <hr>
+      <h3>Result</h3>
+      <p><strong>Name:</strong> <span id="contactName"></span></p>
+      <p><strong>Email:</strong> <span id="contactEmail"></span></p>
+      
+      <div class="control-group">
+        <label for="responseSelect">Responded?</label>
+        <select id="responseSelect">
+          <option value="">(Select status)</option>
+          <option value="positive/meeting">Positive/Meeting</option>
+          <option value="negative">Negative</option>
+          <option value="n/a">N/A</option>
+          <!-- Add more options as discovered or needed -->
+        </select>
+      </div>
+
+      <button id="updateBtn">Update Status</button>
+    </div>
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>
