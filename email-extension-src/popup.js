@@ -12,30 +12,45 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateBtn = document.getElementById('updateBtn');
 
     let currentSheetName = '';
-    let foundRowIndex = -1; // 0-indexed relative to sheet data? API uses 0-indexed or A1 notation? We'll use A1.
+    let foundRowIndex = -1;
+    let currentUpdateRange = '';
 
     // 1. Initialize: Get Auth Token and Load Sheets
+    showStatus('Initializing...', 'normal');
+    // Using explicit interactive: true might fail if triggered on load without user gesture in some browser versions.
+    // Try interactive: false first, then if needed prompt user?
+    // Actually, for a popup, interactive: true usually prompts the login window if needed.
     getAuthToken(true, (token) => {
         if (token) {
             loadSheets(token);
         } else {
-            showStatus('Please click extension to authorize.', 'error');
+            // It's possible the user closed the auth window or it failed.
+            showStatus('Authorization Check Failed. Check console for details.', 'error');
+            // Adding a manual retry button could be helpful here if we were fancy, 
+            // but for now let's just show the error.
         }
     });
 
     // 2. Search Handler
     searchBtn.addEventListener('click', () => {
         const email = emailInput.value.trim();
-        const sheetName = sheetSelect.value;
+        const sheetName = sheetSelect.value; // This might be empty if sheets failed to load
 
-        if (!email || !sheetName) {
-            showStatus('Please enter an email and select a sheet.', 'error');
+        if (!email) {
+            showStatus('Please enter an email.', 'error');
+            return;
+        }
+        if (!sheetName) {
+            // If sheets haven't loaded, user can't select one.
+            showStatus('Please select a sheet (Wait for sheets to load).', 'error');
             return;
         }
 
         getAuthToken(false, (token) => {
             if (token) {
                 searchForEmail(token, sheetName, email);
+            } else {
+                showStatus('Auth token missing during search.', 'error');
             }
         });
     });
@@ -51,6 +66,8 @@ document.addEventListener('DOMContentLoaded', () => {
         getAuthToken(false, (token) => {
             if (token) {
                 updateResponseStatus(token, currentSheetName, foundRowIndex, newStatus);
+            } else {
+                showStatus('Auth token missing during update.', 'error');
             }
         });
     });
@@ -58,46 +75,76 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Helper Functions ---
 
     function getAuthToken(interactive, callback) {
-        chrome.identity.getAuthToken({ interactive: interactive }, (token) => {
-            if (chrome.runtime.lastError) {
-                console.error(chrome.runtime.lastError);
-                showStatus('Authentication failed. See console.', 'error');
-                callback(null);
-            } else {
-                callback(token);
-            }
-        });
+        try {
+            chrome.identity.getAuthToken({ interactive: interactive }, (token) => {
+                if (chrome.runtime.lastError) {
+                    console.error('getAuthToken Error:', chrome.runtime.lastError);
+                    showStatus(`Auth Error: ${chrome.runtime.lastError.message}`, 'error');
+                    callback(null);
+                } else {
+                    console.log('Token received');
+                    callback(token);
+                }
+            });
+        } catch (e) {
+            console.error('Exception in getAuthToken:', e);
+            showStatus(`Auth Exception: ${e.message}`, 'error');
+            callback(null);
+        }
     }
 
     function showStatus(msg, type = 'normal') {
+        // Also log to console so user can inspect
+        if (type === 'error') console.error(msg);
+        else console.log(msg);
+
         statusMessage.textContent = msg;
         statusMessage.className = 'status ' + type;
     }
 
     async function loadSheets(token) {
-        showStatus('Loading sheets...');
+        showStatus('Fetching sheets...');
         try {
             const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}?fields=sheets.properties.title`;
+            console.log('Fetching:', url);
+
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            console.log('Response status:', response.status);
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`API Error ${response.status}: ${errorText}`);
+            }
+
             const data = await response.json();
 
             if (data.error) {
                 throw new Error(data.error.message);
             }
 
+            console.log('Sheets data received:', data);
+
+            // Clear existing options
             sheetSelect.innerHTML = '<option value="" disabled selected>Select a sheet</option>';
-            data.sheets.forEach(sheet => {
-                const title = sheet.properties.title;
-                const option = document.createElement('option');
-                option.value = title;
-                option.textContent = title;
-                sheetSelect.appendChild(option);
-            });
-            showStatus('');
+
+            if (data.sheets && data.sheets.length > 0) {
+                data.sheets.forEach(sheet => {
+                    const title = sheet.properties.title;
+                    const option = document.createElement('option');
+                    option.value = title;
+                    option.textContent = title;
+                    sheetSelect.appendChild(option);
+                });
+                showStatus(''); // Clear 'Loading...' message on success
+            } else {
+                showStatus('No sheets found in this spreadsheet.', 'error');
+            }
+
         } catch (err) {
-            showStatus(`Error loading sheets: ${err.message}`, 'error');
+            showStatus(`Load Sheets Failed: ${err.message}`, 'error');
         }
     }
 
@@ -105,17 +152,20 @@ document.addEventListener('DOMContentLoaded', () => {
         showStatus(`Searching in "${sheetName}"...`);
         resultSection.classList.add('hidden');
         currentSheetName = sheetName;
-        
+
         try {
-            // Read the entire sheet's values (or substantial chunk)
-            // Ideally we'd read just headers first to find columns, then data.
-            // For simplicity/speed, we'll read A1:Z1 (headers) then A:Z.
-            
-            const range = `${sheetName}!A:Z`; // Assumption: Data is within cols A-Z.
+            const range = `${sheetName}!A:Z`;
             const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(range)}`;
+
             const response = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`API Error ${response.status}: ${errorText}`);
+            }
+
             const data = await response.json();
 
             if (data.error) throw new Error(data.error.message);
@@ -125,9 +175,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const headers = data.values[0];
-            const emailIndex = headers.findIndex(h => h.trim() === 'Email');
-            const respondedIndex = headers.findIndex(h => h.trim() === 'Responded?');
-            const nameIndex = headers.findIndex(h => h.trim() === 'First Name' || h.trim() === 'Name'); // Try to match common name headers
+            // Flexible header matching
+            const emailIndex = headers.findIndex(h => h && h.trim().toLowerCase() === 'email');
+            const respondedIndex = headers.findIndex(h => h && h.trim().toLowerCase() === 'responded?');
+            const nameIndex = headers.findIndex(h => h && (h.trim().toLowerCase() === 'first name' || h.trim().toLowerCase() === 'name'));
 
             if (emailIndex === -1) {
                 showStatus('Column "Email" not found in this sheet.', 'error');
@@ -138,48 +189,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             }
 
-            // Client-side search for the email
             let matchRow = -1;
             let matchData = null;
             const searchEmail = email.toLowerCase().trim();
 
             for (let i = 1; i < data.values.length; i++) {
                 const row = data.values[i];
-                const rowEmail = row[emailIndex] ? row[emailIndex].toLowerCase().trim() : '';
+                // Ensure row has enough columns
+                const rowEmail = (row[emailIndex]) ? String(row[emailIndex]).toLowerCase().trim() : '';
                 if (rowEmail === searchEmail) {
-                    matchRow = i; // 0-based index in the values array
+                    matchRow = i;
                     matchData = row;
                     break;
                 }
             }
 
             if (matchRow !== -1) {
-                foundRowIndex = matchRow + 1; // 1-based row number for Sheets API A1 notation
+                foundRowIndex = matchRow + 1;
                 const name = (nameIndex !== -1 && matchData[nameIndex]) ? matchData[nameIndex] : '(Name not found)';
-                
+
                 contactNameSpan.textContent = name;
                 contactEmailSpan.textContent = matchData[emailIndex];
-                
-                // Set current status if available
-                const currentStatus = matchData[respondedIndex] ? matchData[respondedIndex].toLowerCase() : '';
-                // Try to set the select value, or default to empty
+
+                const currentStatus = (matchData[respondedIndex]) ? String(matchData[respondedIndex]).toLowerCase() : '';
+
                 let optionFound = false;
-                for(let opts of responseSelect.options){
-                     if(opts.value === currentStatus) {
-                         responseSelect.value = currentStatus;
-                         optionFound = true;
-                     }
+                for (let opts of responseSelect.options) {
+                    if (opts.value === currentStatus) {
+                        responseSelect.value = currentStatus;
+                        optionFound = true;
+                    }
                 }
-                if(!optionFound && currentStatus) {
-                     // If existing status isn't in our list, maybe add it or just leave select blank?
-                     // Leaving blank/default is safer than overwriting visually.
-                     responseSelect.value = "";
+                if (!optionFound) {
+                    responseSelect.value = "";
                 }
 
-                // Store column letter for update
-                // 0 -> A, 1 -> B ... 
                 const respondedColLetter = getColumnLetter(respondedIndex);
-                // Save specific cell range: e.g. Sheet1!C5
                 currentUpdateRange = `${sheetName}!${respondedColLetter}${foundRowIndex}`;
 
                 resultSection.classList.remove('hidden');
@@ -193,15 +238,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    let currentUpdateRange = '';
-
     async function updateResponseStatus(token, sheetName, rowIndex, newStatus) {
         if (!currentUpdateRange) return;
 
         showStatus('Updating...');
         try {
             const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(currentUpdateRange)}?valueInputOption=USER_ENTERED`;
-            
+
             const body = {
                 range: currentUpdateRange,
                 majorDimension: 'ROWS',
@@ -217,8 +260,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify(body)
             });
 
-            const data = await response.json();
+            if (!response.ok) {
+                const errorText = await response.text();
+                throw new Error(`API Error ${response.status}: ${errorText}`);
+            }
 
+            const data = await response.json();
             if (data.error) throw new Error(data.error.message);
 
             showStatus('Status updated successfully!', 'success');
