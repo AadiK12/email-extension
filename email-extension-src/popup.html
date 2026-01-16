@@ -1,49 +1,133 @@
 <!DOCTYPE html>
 <html>
+
 <head>
   <title>Contact Editor</title>
   <link rel="stylesheet" type="text/css" href="popup.css">
 </head>
+
 <body>
   <div class="container">
     <h2>Contact Editor</h2>
-    
-    <div class="control-group">
-      <label for="sheetSelect">Select Sheet:</label>
-      <select id="sheetSelect">
-        <option value="" disabled selected>Loading sheets...</option>
-      </select>
+
+    <div class="card">
+      <div class="control-group">
+        <label for="sheetSelect">Select Sheet</label>
+        <select id="sheetSelect">
+          <option value="" disabled selected>Loading sheets...</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="emailInput">Email Address</label>
+        <input type="email" id="emailInput" placeholder="Enter email to search">
+      </div>
+
+      <button id="searchBtn" class="btn-primary">Search</button>
+      <div id="statusMessage" class="status"></div>
     </div>
 
-    <div class="control-group">
-      <label for="emailInput">Email Address:</label>
-      <input type="email" id="emailInput" placeholder="Enter email to search">
-    </div>
-
-    <button id="searchBtn">Search</button>
-
-    <div id="statusMessage" class="status"></div>
-
-    <div id="resultSection" class="hidden">
-      <hr>
+    <div id="resultSection" class="card hidden">
       <h3>Result</h3>
-      <p><strong>Name:</strong> <span id="contactName"></span></p>
-      <p><strong>Email:</strong> <span id="contactEmail"></span></p>
-      
+      <div class="contact-info">
+        <p><strong>Name:</strong> <span id="contactName"></span></p>
+        <p><strong>Email:</strong> <span id="contactEmail"></span></p>
+      </div>
+
       <div class="control-group">
         <label for="responseSelect">Responded?</label>
         <select id="responseSelect">
           <option value="">(Select status)</option>
-          <option value="positive/meeting">Positive/Meeting</option>
-          <option value="negative">Negative</option>
-          <option value="n/a">N/A</option>
-          <!-- Add more options as discovered or needed -->
+          <option value="N/A">N/A</option>
+          <option value="Positive/meeting">Positive/meeting</option>
+          <option value="Negative">Negative</option>
+          <option value="Forwarded">Forwarded</option>
+          <option value="Questions">Questions</option>
+          <option value="Bounced">Bounced</option>
+          <option value="Negative Individual">Negative Individual</option>
+          <option value="Not Real">Not Real</option>
+          <option value="Blocked">Blocked</option>
         </select>
       </div>
 
-      <button id="updateBtn">Update Status</button>
+      <button id="updateBtn" class="btn-primary">Update Status</button>
     </div>
-  </div>
-  <script src="popup.js"></script>
+
+    <!-- Calendly Section -->
+    <div class="card">
+      <h3>Calendly Integration</h3>
+
+      <div id="calendlyConfig">
+        <button id="toggleTokenBtn" class="btn-secondary small">Show/Edit API Token</button>
+        <div id="tokenInputSection" class="hidden control-group mt-10">
+          <label for="calendlyToken">Personal Access Token</label>
+          <input type="password" id="calendlyToken" placeholder="Paste token here">
+          <button id="saveTokenBtn" class="btn-primary mt-5">Save Token</button>
+        </div>
+      </div>
+
+      <div id="calendlySection" class="hidden mt-10">
+        <div class="control-group">
+          <label for="eventTypeSelect">Event Type</label>
+          <select id="eventTypeSelect">
+            <option value="" disabled selected>Select event type...</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <label for="calNameInput">Invitee Name</label>
+          <input type="text" id="calNameInput" placeholder="Name">
+        </div>
+
+        <div class="control-group">
+          <label for="calEmailInput">Invitee Email</label>
+          <input type="email" id="calEmailInput" placeholder="Email">
+        </div>
+
+        <button id="generateLinkBtn" class="btn-success">Generate Link</button>
+
+        <div id="calendlyResult" class="hidden control-group mt-10">
+          <label>Single-Use Link</label>
+          <div class="input-group">
+            <input type="text" id="generatedLinkDisplay" readonly>
+            <button id="copyLinkBtn" class="btn-secondary">Copy</button>
+          </div>
+        </div>
+      </div>
+      <!-- Email Templates Section -->
+      <div class="card mt-10">
+        <h3>Email Templates</h3>
+
+        <div class="control-group">
+          <label for="templateSelect">Saved Templates</label>
+          <div class="input-group">
+            <select id="templateSelect">
+              <option value="" selected>Select a template...</option>
+            </select>
+            <button id="newTemplateBtn" class="btn-secondary small">New</button>
+          </div>
+        </div>
+
+        <div id="templateEditor" class="hidden mt-10">
+          <div class="control-group">
+            <label for="templateTitle">Title</label>
+            <input type="text" id="templateTitle" placeholder="Template Name">
+          </div>
+
+          <div class="control-group">
+            <label for="templateContent">Content</label>
+            <textarea id="templateContent" rows="6" placeholder="Write your email template here..."></textarea>
+          </div>
+
+          <div class="button-row mt-10">
+            <button id="saveTemplateBtn" class="btn-primary">Save</button>
+            <button id="copyTemplateBtn" class="btn-success">Copy</button>
+            <button id="deleteTemplateBtn" class="btn-danger">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script src="popup.js"></script>
 </body>
+
 </html>

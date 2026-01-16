@@ -8,7 +8,8 @@
         "storage"
     ],
     "host_permissions": [
-        "https://sheets.googleapis.com/*"
+        "https://sheets.googleapis.com/*",
+        "https://api.calendly.com/*"
     ],
     "oauth2": {
         "client_id": "942515055183-43lbq5tdpehnj3ijo0lt7kg2n4c5ic06.apps.googleusercontent.com",
