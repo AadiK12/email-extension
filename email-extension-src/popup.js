@@ -3,6 +3,9 @@ const SPREADSHEETS = [
     { id: '1XkXb7QWgZzpKddQdyvxK7NrfsuSJB5ZARWnRroHWav0', name: 'Master 2' }
 ];
 
+const SALES_MASTER_ID = '16yU-doSAcsxTOvNIbkw2RmFa059P6MCDPLmPBOMZuaQ';
+const SENT_LOG_SHEET_NAME = 'SentLog';
+
 document.addEventListener('DOMContentLoaded', () => {
     const sheetSelect = document.getElementById('sheetSelect');
     const emailInput = document.getElementById('emailInput');
@@ -79,7 +82,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (selection === 'ALL') {
             getAuthToken(false, (token) => {
                 if (token) {
-                    searchAllSheets(token, email);
+                    // New logic: Search via SentLog first
+                    searchViaSentLog(token, email);
                 } else {
                     showStatus('Auth token missing during search.', 'error');
                 }
@@ -356,6 +360,104 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (err) {
             showStatus(`Load Sheets Failed: ${err.message}`, 'error');
+        }
+    }
+
+    async function searchViaSentLog(token, email) {
+        showStatus('Checking SentLog...', 'normal');
+        resultSection.classList.add('hidden');
+
+        try {
+            // 1. Get Sheet Properties (to find total row count) and Headers
+            const metaUrl = `https://sheets.googleapis.com/v4/spreadsheets/${SALES_MASTER_ID}?fields=sheets.properties`;
+
+            const [metaRes, headerRes] = await Promise.all([
+                fetch(metaUrl, { headers: { 'Authorization': `Bearer ${token}` } }),
+                fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SALES_MASTER_ID}/values/${SENT_LOG_SHEET_NAME}!1:1`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                })
+            ]);
+
+            if (!metaRes.ok) throw new Error('Failed to fetch Sales Master metadata');
+            if (!headerRes.ok) throw new Error('Failed to fetch SentLog headers');
+
+            const metaData = await metaRes.json();
+            const headerData = await headerRes.json();
+
+            // Find SentLog sheet properties
+            const sentLogSheet = metaData.sheets.find(s => s.properties.title === SENT_LOG_SHEET_NAME);
+            if (!sentLogSheet) throw new Error(`Sheet "${SENT_LOG_SHEET_NAME}" not found in Sales Master.`);
+
+            const totalRows = sentLogSheet.properties.gridProperties.rowCount;
+
+            // Determine Headers
+            if (!headerData.values || headerData.values.length === 0) throw new Error('SentLog headers empty.');
+            const headers = headerData.values[0];
+            const emailIndex = headers.findIndex(h => h && h.trim().toLowerCase() === 'email');
+            const sourceSheetIndex = headers.findIndex(h => h && h.trim().toLowerCase() === 'source sheet');
+
+            if (emailIndex === -1) throw new Error('No "Email" column in SentLog.');
+            if (sourceSheetIndex === -1) throw new Error('No "Source Sheet" column in SentLog.');
+
+            // 2. Fetch last 1500 rows
+            const rowsToFetch = 1500;
+            // gridProperties.rowCount is the total dimensions. 
+            // If the sheet is huge but empty at bottom, we might scan empty rows.
+            // But relying on that is the only way without iterative checking.
+            const startRow = Math.max(2, totalRows - rowsToFetch + 1);
+            const range = `${SENT_LOG_SHEET_NAME}!A${startRow}:Z${totalRows}`;
+
+            showStatus(`Scanning last ${rowsToFetch} rows of SentLog...`);
+
+            const dataRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SALES_MASTER_ID}/values/${encodeURIComponent(range)}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (!dataRes.ok) throw new Error('Failed to fetch SentLog data.');
+            const data = await dataRes.json();
+
+            if (!data.values || data.values.length === 0) {
+                showStatus('No data found in the last 1500 rows.', 'error');
+                return;
+            }
+
+            // 3. Search Data (Iterate Backwards)
+            const searchEmail = email.toLowerCase().trim();
+            // Data values index 0 corresponds to startRow. 
+            // We want to loop from the end (most recent).
+            let foundSourceSheet = null;
+
+            for (let i = data.values.length - 1; i >= 0; i--) {
+                const row = data.values[i];
+                const rowEmail = (row[emailIndex]) ? String(row[emailIndex]).toLowerCase().trim() : '';
+
+                if (rowEmail === searchEmail) {
+                    foundSourceSheet = (row[sourceSheetIndex]) ? String(row[sourceSheetIndex]).trim() : '';
+                    break;
+                }
+            }
+
+            if (foundSourceSheet) {
+                showStatus(`Found in SentLog! Source: ${foundSourceSheet}`);
+
+                // 4. Resolve Source Sheet to ID using allSheetsContext
+                // We depend on allSheetsContext being populated by loadSheets
+                const targetContext = allSheetsContext.find(ctx => ctx.sheetName.toLowerCase() === foundSourceSheet.toLowerCase());
+
+                if (targetContext) {
+                    // Navigate to searchForEmail
+                    await searchForEmail(token, targetContext.spreadsheetId, targetContext.sheetName, email);
+                } else {
+                    showStatus(`Looked for "${foundSourceSheet}" but could not find it in loaded sheets.`, 'error');
+                }
+
+            } else {
+                showStatus('Email not found in the last 1500 entries of SentLog.', 'error');
+            }
+
+        } catch (err) {
+            console.error(err);
+            showStatus(`SentLog Search Error: ${err.message}`, 'error');
         }
     }
 
