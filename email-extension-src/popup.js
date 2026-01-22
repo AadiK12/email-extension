@@ -346,10 +346,10 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (totalSheetsFound > 0) {
-                // Add "Search All" option at the top
+                // Add "Search via SentLog" option at the top
                 const allOption = document.createElement('option');
                 allOption.value = "ALL";
-                allOption.textContent = "Search All Sheets";
+                allOption.textContent = "Search via SentLog";
                 allOption.selected = true;
                 sheetSelect.insertBefore(allOption, sheetSelect.firstChild);
 
