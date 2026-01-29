@@ -399,48 +399,63 @@ document.addEventListener('DOMContentLoaded', () => {
             if (emailIndex === -1) throw new Error('No "Email" column in SentLog.');
             if (sourceSheetIndex === -1) throw new Error('No "Source Sheet" column in SentLog.');
 
-            // 2. Fetch last 1500 rows
-            const rowsToFetch = 1500;
-            // gridProperties.rowCount is the total dimensions. 
-            // If the sheet is huge but empty at bottom, we might scan empty rows.
-            // But relying on that is the only way without iterative checking.
-            const startRow = Math.max(2, totalRows - rowsToFetch + 1);
-            const range = `${SENT_LOG_SHEET_NAME}!A${startRow}:Z${totalRows}`;
-
-            showStatus(`Scanning last ${rowsToFetch} rows of SentLog...`);
-
-            const dataRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SALES_MASTER_ID}/values/${encodeURIComponent(range)}`, {
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            if (!dataRes.ok) throw new Error('Failed to fetch SentLog data.');
-            const data = await dataRes.json();
-
-            if (!data.values || data.values.length === 0) {
-                showStatus('No data found in the last 1500 rows.', 'error');
-                return;
-            }
-
-            // 3. Search Data (Iterate Backwards)
+            // 2. Loop Backwards in Chunks
             const searchEmail = email.toLowerCase().trim();
-            // Data values index 0 corresponds to startRow. 
-            // We want to loop from the end (most recent).
+            const chunkSize = 1500;
+            let currentEndRow = totalRows;
             let foundSourceSheet = null;
 
-            for (let i = data.values.length - 1; i >= 0; i--) {
-                const row = data.values[i];
-                const rowEmail = (row[emailIndex]) ? String(row[emailIndex]).toLowerCase().trim() : '';
+            // Keep searching as long as we have rows to check (above headers, row 1)
+            while (currentEndRow >= 2) {
+                // Calculate start row for this chunk
+                // Ensure we don't go below row 2 (row 1 is header)
+                // Range is inclusive: [startRow, endRow]
+                let startRow = Math.max(2, currentEndRow - chunkSize + 1);
 
-                if (rowEmail === searchEmail) {
-                    foundSourceSheet = (row[sourceSheetIndex]) ? String(row[sourceSheetIndex]).trim() : '';
+                showStatus(`Scanning SentLog rows ${startRow} to ${currentEndRow}...`);
+
+                const range = `${SENT_LOG_SHEET_NAME}!A${startRow}:Z${currentEndRow}`;
+
+                const dataRes = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${SALES_MASTER_ID}/values/${encodeURIComponent(range)}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+
+                if (dataRes.ok) {
+                    const data = await dataRes.json();
+
+                    if (data.values && data.values.length > 0) {
+                        // Iterate backwards through *this chunk*
+                        // data.values[0] maps to startRow
+                        // data.values[length-1] maps to endRow
+                        for (let i = data.values.length - 1; i >= 0; i--) {
+                            const row = data.values[i];
+                            const rowEmail = (row[emailIndex]) ? String(row[emailIndex]).toLowerCase().trim() : '';
+
+                            if (rowEmail === searchEmail) {
+                                foundSourceSheet = (row[sourceSheetIndex]) ? String(row[sourceSheetIndex]).trim() : '';
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    console.error(`Failed to fetch chunk ${startRow}-${currentEndRow}: ${dataRes.status}`);
+                    // Optionally break or continue? If one chunk fails, safe to abort?
+                    // Let's abort to avoid infinite loop or errors.
+                    throw new Error(`Failed to fetch SentLog chunk rows ${startRow}-${currentEndRow}`);
+                }
+
+                if (foundSourceSheet) {
                     break;
                 }
+
+                // Prepare next chunk
+                currentEndRow = startRow - 1;
             }
 
             if (foundSourceSheet) {
                 showStatus(`Found in SentLog! Source: ${foundSourceSheet}`);
 
-                // 4. Resolve Source Sheet to ID using allSheetsContext
+                // 3. Resolve Source Sheet to ID using allSheetsContext
                 // We depend on allSheetsContext being populated by loadSheets
                 const targetContext = allSheetsContext.find(ctx => ctx.sheetName.toLowerCase() === foundSourceSheet.toLowerCase());
 
@@ -452,7 +467,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
 
             } else {
-                showStatus('Email not found in the last 1500 entries of SentLog.', 'error');
+                showStatus('Email not found in SentLog.', 'error');
             }
 
         } catch (err) {
